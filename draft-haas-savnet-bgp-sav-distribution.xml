@@ -1,0 +1,649 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-model href="rfc7991bis.rnc"?>
+<!DOCTYPE rfc [
+  <!ENTITY nbsp    "&#160;">
+  <!ENTITY zwsp   "&#8203;">
+  <!ENTITY nbhy   "&#8209;">
+  <!ENTITY wj     "&#8288;">
+]>
+<rfc
+  xmlns:xi="http://www.w3.org/2001/XInclude"
+  category="std"
+  docName="draft-haas-savnet-bgp-sav-distribution-00"
+  ipr="trust200902"
+  obsoletes=""
+  updates=""
+  submissionType="IETF"
+  xml:lang="en"
+  version="3">
+  <front>
+    <title abbrev="BGP SAV Distribution">Distribution of Source Address Validation State in BGP</title>
+
+    <seriesInfo name="Internet-Draft" value="draft-haas-savnet-bgp-sav-distribution-00"/>
+   
+    <author fullname="Jeffrey Haas" initials="J." surname="Haas">
+      <organization>Juniper Networks, Inc.</organization>
+      <address>
+        <postal>
+          <street>1133 Innovation Way</street>
+          <city>Sunnyvale</city>
+          <region>CA</region>
+          <code>94089</code>
+          <country>US</country>
+          </postal>
+          <email>jhaas@juniper.net</email>
+      </address>
+    </author>
+   
+    <date year="2024"/>
+
+    <area>Routing</area>
+    <workgroup>Internet Engineering Task Force</workgroup>
+    <keyword>BGP</keyword>
+    <keyword>SAV</keyword>
+    <keyword>source address validation</keyword>
+
+    <abstract>
+      <t>
+        Source Address Validation (SAV) is a technique that can be used to
+        mitigate source address spoofing.  draft-huang-savnet-sav-table codifies
+        the concept of source address validation on a per-incoming interface
+        basis, the validation mode, and the traffic handling policy as a 
+        "SAV Table".
+      </t>
+      <t>
+        This document defines a mechanism for distributing logical SAV Tables in
+        BGP.  This mechanism is addresses inter-domain SAV use cases.  These SAV
+        Tables may be used to implement appropriate device-specific validation
+        for source addresses.
+      </t>
+    </abstract>
+ 
+  </front>
+
+  <middle>
+    
+    <section>
+      <name>Introduction</name>
+      <t>Introductory text</t>
+      
+      <section anchor="requirements">
+        <name>Requirements Language</name>
+        <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL",
+          "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT
+          RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+          interpreted as described in BCP 14 <xref target="RFC2119"/>
+          <xref target="RFC8174"/> when, and only when, they appear in
+          all capitals, as shown here.</t>
+      </section>
+    </section>
+    
+    <section>
+      <name>Terminology</name>
+      <t>
+        The following terminology is defined in
+        <xref target="I-D.huang-savnet-sav-table"/>:
+      </t>
+      <dl>
+        <dt>SAV rule:</dt>
+        <dd>The entry specifying the valid incoming interfaces of specific
+          source addresses or source prefixes.</dd>
+
+        <dt>Traffic handling policy:</dt>
+        <dd>The policy taken on the packets validated by SAV.</dd>
+
+        <dt>Validation mode:</dt>
+        <dd>The mode that describes the typical applications of SAV in a specific
+          kind of scenarios. Different modes take effect in different scales and
+          treat the default prefix differently.</dd>
+      </dl>
+
+      <t>
+        The following terminology is defined in this document:
+      </t>
+      <dl>
+        <dt>BGP SAV-dist Entry (SAV-D Entry):</dt>
+        <dd>A tuple consisting of a source address prefix, validation mode, and
+          traffic handling policy.</dd>
+
+        <dt>BGP SAV-dist Target (SAV-D Target):</dt>
+        <dd>An attribute declaring membership of a BGP SAV-dist Entry in one or
+          more BGP SAV-dist Tables.</dd>
+
+        <dt>BGP SAV-dist Table (SAV-D Table):</dt>
+        <dd>A logical table defined by a set of BGP SAV-dist Targets and the BGP
+          SAV-dist Entries matching those targets.</dd>
+      </dl>
+    </section>
+    
+    <section>
+      <name>A model for SAV distribution</name>
+
+      <t>
+        Source address validation can be modeled on a per-interface basis as a
+        match operation on a list of prefixes.  Upon a match, or failure to
+        match, a traffic handling policy is applied to the traffic.  An instance
+        of a prefix, its validation mode, and its traffic handling policy is a
+        SAV rule.
+      </t>
+      <t>
+        In the inter-domain SAV use case, this set of prefixes consists of the
+        set of upstream networks that may receive the advertised BGP routes,
+        either directly or transitively, where the forwarding element is a BGP
+        next hop.  Determining this set of upstream prefixes is the subject of a
+        number of savnet proposals.
+      </t>
+      <t>
+        A given SAV rule may be applied to a number of forwarding elements
+        on the same device, or across multiple devices.
+      </t>
+      <t>
+        It can be observed that a given SAV rule that might be applied to a
+        given interface by a provisioning mechanism follows several common
+        membership criteria:
+      </t>
+      <ul>
+        <li>This rule is for this specific interface on a device.</li>
+        <li>This rule is for a set of interfaces on this device that may share a
+          common property.  For example, "all customer interfaces".</li>
+        <li>This rule is for a set of interfaces across the network (Autonomous
+          System) that may share a common property.  For example, all interfaces
+          for a given service provider.</li>
+        <li>This rule is for a prefix from an upstream BGP Autonomous
+          System.</li>
+      </ul>
+
+      <t>A "SAV Table" may be modeled as the interface-specific list of
+        memberships for SAV rules that share those membership criteria.</t>
+
+      <t>These properties have some similarity with Layer 3 VPNs.  A SAV entry
+        may be modeled as a BGP route that is a member of some number of SAV-D
+        Tables via one or more SAV-D Targets.</t>
+    </section>
+
+    <section>
+      <name>SAV-D Routes</name>
+      
+      <t>
+        A SAV-D Route implements an instance of a SAV rule.  As noted above, SAV
+        rules consist of a prefix, a validation mode, and a traffic handling
+        policy.
+      </t>
+      <t>
+        A prefix for a SAV-D Route may have a large number of memberships across
+        a deployment.  Since baseline BGP is limited by its PDU size to 4096
+        bytes, the prefix alone cannot be the "NLRI key".  In order to permit a
+        large number of memberships for a given prefix, this document defines a
+        new Route Distinguisher.  The prefix is encoded in a BGP NLRI with a new
+        SAFI, defined below.  The validation mode and traffic handling policies
+        are encoded in new BGP Extended Communities <xref target="RFC4360"/>.
+      </t>
+      <section>
+        <name>SAV-D RD-Originator</name>
+        <artset>
+          <artwork type="ascii-art" name="RD-Originator">
+            <![CDATA[
+  Type Field: TBD (2 octets)
+  Value Field: 6 octets
+
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Type: TBD                     |    Global Administrator       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Global Administrator (cont.)  |    Local Administrator        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+            ]]>
+          </artwork>
+        </artset>      
+
+        <t>
+          The Global Administrator field contains the BGP Identifier of the BGP
+          speaker originating these SAV-D routes.
+        </t>
+        <t>
+          The Local Administrator contains a locally chosen value that permits
+          unique combinations of SAV-D Routes to be distributed across the
+          deployment.
+        </t>
+      </section>
+
+      <section>
+        <name>SAV-D NLRI</name>
+
+        <t>
+          This document defines two new BGP NLRI types, AFI=1/2, SAFI=TBD, which
+          can be used to distribute SAV Rules in BGP.
+
+          The NLRI format for this address family consists of a fixed-length 8
+          octet SAV-D RD-Originator followed by a variable-length IPv4 or IPv6
+          prefix whose length depends on AFI.
+        </t>
+      </section>
+
+      <section>
+        <name>SAV-D Match Extended Community</name>
+        <artset>
+          <artwork type="ascii-art" name="SAV-D Match Extended Community">
+            <![CDATA[
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Type      |   Sub-Type     |              0                |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     0                         |     Value     |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Type: TBD
+Sub-Type: TBD
+            ]]>
+          </artwork>
+        </artset>      
+        <t>
+          The first five octets of this Extended Community's Value field MUST be
+          zero.
+        </t>
+        <t>
+          The Value of this extended community can be:
+        </t>
+        <dl>
+          <dt>1:</dt>
+          <dd>Allow.  Traffic matching this source address has passed the
+            local validation criteria and will continue to be processed in the
+            forwarding pipeline.</dd>
+          <dt>2:</dt>
+          <dd>Block.  Traffic matching this source address has failed validation
+            and will be blocked.</dd>
+          <dt>3:</dt>
+          <dd>Action. Traffic matching this source address is subject to further
+            evaluation based on the SAV-D Route Traffic Handling procedures.</dd>
+        </dl>
+      </section>
+
+      <section>
+        <name>Encoding SAV-D Route Traffic Handling Actions</name>
+
+        <t>
+          When traffic has the "Action" match criteria, the traffic is subject
+          to additional processing when supported by the local forwarding
+          element.
+        </t>
+        <t>
+          The following extended communities are re-used from 
+          <xref target="RFC8955" section="7"/>:
+        </t>
+        <ul>
+          <li>traffic-rate-bytes - rate-limiting bps.</li>
+          <li>traffic-rate-packets - rate-limit pps.</li>
+          <li>rt-redirect AS-2octet - traffic redirection by VRF.</li>
+          <li>rt-redirect AS-4octet - traffic redirection by VRF.</li>
+          <li>rt-redirect IPv4 - traffic redirection by VRF.</li>
+          <li>traffic-marking - traffic marking DSCP.</li>
+          <li>traffic-action, S-bit only - sampling. All other bits MUST be zero.</li>
+        </ul>
+        <t>
+          The following extended communities are re-used from 
+          <xref target="RFC8956" section="7"/>:
+        </t>
+        <ul>
+          <li>rt-redirect IPv6 - traffic redirection by VRF.</li>
+        </ul>
+        <t>
+          The following extended communities are re-used from
+          <xref target="I-D.ietf-idr-flowspec-redirect-ip"/>:
+        </t>
+        <ul>
+          <li>Flow-spec Redirect to IPv4</li>
+          <li>Flow-spec Redirect to IPv6</li>
+        </ul>
+        <section>
+          <name>Error handling for SAV-D Traffic Handling Actions</name>
+
+          <t>
+            A BGP speaker might not be able to process some or any of the traffic
+            handling actions.  Since SAV tables are intended to be provisioned on
+            a per-device per-interface basis, BGP speakers generating SAV-D routes
+            should have an understanding of what features can be implemented by
+            the receiving device and avoid encoding actions that cannot be
+            implemented by that device.
+          </t>
+          <t>
+            The following error handling behaviors are specified for SAV-D
+            routes containing actions:
+          </t>
+          <ul>
+            <li>A SAV-D route MUST NOT contain more than one redirection action.  
+              If a BGP speaker receives more than one redirection action it MAY
+              locally permit traffic to be allowed or blocked based on
+              provisioning.</li>
+            <li>A BGP speaker unable to implement redirection MAY locally permit
+              traffic to be allowed or blocked based on provisioning.</li>
+            <li>A BGP speaker unable to implement rate-limiting MAY locally
+              permit traffic to be allowed or blocked based on provisoning.</li>
+            <li>A BGP speaker unable to implement traffic-marking MAY locally
+              permit traffic to be allowed or blocked based on provisoning.</li>
+            <li>A BGP speaker unable to implement sampling SHOULD permit traffic
+              to be allowed.</li>
+          </ul>
+        </section>
+      </section>
+    </section>
+
+    <section>
+      <name>SAV-D Targets</name>
+
+      <t>SAV-D Routes are members of one or more SAV-D Tables.  This membership
+        is signaled in SAV-D Routes using one or more SAV-D Target Extended
+        Communities.</t>
+
+      <t>
+        Some SAV-D Targets are node-specific.  In order to clearly encode such
+        node-specific SAV-D Extended Communities and appropriately scope them,
+        routes containing SAV-D node-specific Extended Communities MUST contain a
+        single instance of a Node Target Extended Community, 
+        <xref target="I-D.ietf-idr-node-target-ext-comm"/>.
+      </t>
+
+      <section>
+        <name>SAV-D Interface Member Extended Community</name>
+        <artset>
+          <artwork type="ascii-art" name="SAV-D Interface Member Extended Community">
+            <![CDATA[
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Type       |   Sub-Type    |    Global Administrator       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Global Administrator (cont.)  |               0               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Type: TBD - non-transitive
+Sub-Type: TBD
+            ]]>
+          </artwork>
+        </artset>      
+        <t>
+          This is a SAV-D node-specific Extended Community type and requires a
+          Node Target Extended Community for context.
+        </t>
+        <t>
+          The Global Administrator field is set to the ifIndex 
+          <xref target="RFC1213"/> of the interface that the SAV Rule is a
+          member of.  The Local Administrator field MUST be set to zero.
+        </t>
+      </section>
+
+      <section>
+        <name>SAV-D Device-Specific Group Member Extended Community</name>
+        <artset>
+          <artwork type="ascii-art" name="SAV-D Device-Specific Group Member Extended Community">
+            <![CDATA[
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Type       |   Sub-Type    |          Value...             ~
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+~                           ...Value                            |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Type: TBD - non-transitive
+Sub-Type: TBD
+            ]]>
+          </artwork>
+        </artset>      
+        <t>
+          This is a SAV-D node-specific Extended Community type and requires a
+          Node Target Extended Community for context.
+        </t>
+        <t>
+          The 6-octet value is has local significance to the node.
+        </t>
+      </section>
+
+      <section>
+        <name>SAV-D Neighbor-AS Member Extended Community</name>
+        <artset>
+          <artwork type="ascii-art" name="SAV-D Neighbor-AS Member Extended Community">
+            <![CDATA[
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Type       |   Sub-Type    |    Global Administrator       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Global Administrator (cont.)  |               0               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Type: TBD - non-transitive
+Sub-Type: TBD
+            ]]>
+          </artwork>
+        </artset>      
+        <t>
+          The SAV rules are associated with a given neighbor AS of the service
+          provider.
+        </t>
+        <t>
+          The 4-octet Global Administrator field is set to the neighbor AS that
+          the SAV table is attached to.  The Local Administrator field MUST be
+          set to zero.
+        </t>
+      </section>
+
+      <section>
+        <name>SAV-D Origin-AS Member Extended Community</name>
+        <artset>
+          <artwork type="ascii-art" name="SAV-D Origin-AS Member Extended Community">
+            <![CDATA[
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|    Type       |   Sub-Type    |    Global Administrator       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| Global Administrator (cont.)  |               0               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+Type: TBD - non-transitive
+Sub-Type: TBD
+            ]]>
+          </artwork>
+        </artset>      
+        <t>
+          The SAV rules are associated with a given originating AS.  This
+          membership enables such use cases as including the AS numbers in a
+          customer cone.
+        </t>
+        <t>
+          BGP speakers implementing <xref target="RFC8210"/> and ensuring that
+          all Origin AS state used for SAV rules is present in their RPKI ROA
+          cache MAY obtain the prefixes for their SAV Rules from that mechanism
+          rather than BGP.
+        </t>
+        <t>
+          The 4-octet Global Administrator field is set to the neighbor AS that
+          the SAV table is attached to.  The Local Administrator field MUST be
+          set to zero.
+        </t>
+      </section>
+    </section>
+
+    <section>
+      <name>SAV-D Operational Model</name>
+
+      <t>The method by which a set of SAV Rules is determined for a given
+        interface remains a somewhat contentious discussion.  For purposes of
+        this document, it is presumed that a "SAV Controller" exists to
+        calculate the appropriate SAV rules for the deployment and that such a
+        controller implements the extensions defined in this document to
+        provision SAV within the network.
+      </t>
+
+      <t>
+        Each forwarding element implementing SAV will be provisioned with the
+        per-interface SAV-D memberships for the SAV Rules implemented by that
+        device.  This state constitutes a logical SAV Table.
+      </t>
+       
+      <section>
+        <name>SAV-D Route Distribution and Scaling</name>
+
+        <t>
+          The SAV Controller originates BGP SAV-D Routes with appropriate membership
+          Extended Communities to each forwarding element.  When the device has
+          matching membership for such SAV-D routes in a SAV Table, it installs
+          that route in that logical SAV Table using the standard BGP Decision
+          Process to choose the best SAV Route when multiple candidate routes
+          exist.
+        </t>
+
+        <t>
+          <xref target="RFC4684"/> SHOULD be deployed between BGP speakers
+          distributing SAV-D Routes.
+        </t>
+
+        <t>
+          SAV-D BGP speakers SHOULD originate <xref target="RFC4684"/>
+          routes for SAV-D Neighor-AS and Origin-AS Member Extended Communities.
+          Such routes will attract SAV Rules that may be used in-common across
+          multiple SAV Tables in a deployment.
+        </t>
+
+        <section>
+          <name>Leveraging RPKI-RTR</name>
+
+          <t>
+            In deployments where it is known that the SAV Controller would be
+            emitting SAV Routes with Origin-AS Member Extended Communities that
+            are identical with the RPKI ROA state carried in RPKI-RTR 
+            (<xref target="RFC8210"/>), implementations MAY exclude originating 
+            <xref target="RFC4684"/> routes for these Origin-AS Member Extended
+            Communities and instead derive the local SAV Rules for their SAV
+            Tables from the received RPKI-RTR state.
+          </t>
+        </section>
+
+        <section>
+          <name>Node-specific Extended Community scaling considerations</name>
+          <t>
+            Some SAV Routes have membership that is only only node-specific, i.e.
+            contains only node-specific SAV-D Extended Communities. Distribution
+            of these routes to all iBGP speakers within an AS, either via
+            full-mesh iBGP or route reflection, will result in SAV-D BGP speakers
+            receiving SAV Routes they do not care about.
+          </t>
+
+          <t>
+            SAV-D BGP speakers SHOULD originate <xref target="RFC4684"/> routes
+            for the Node Target Extended Communities.  At the same time, such
+            speakers SHOULD NOT originate <xref target="RFC4684"/> routes for
+            SAV-D node-specific Extended Communities.  The Node Target Extended
+            Community is sufficient to attract the appropriate SAV-D Routes
+            without needing to expose internal membership details.
+          </t>
+
+          <t>
+            As an optimization, implementations MAY distribute such
+            node-specific SAV-D Routes using "targeted" BGP sessions.  In this
+            case, a dedicated BGP session between a SAV Controller and a SAV-D
+            speaker is used to distribute node-specific BGP routes.  Such routes
+            SHOULD be marked with the <xref target="RFC1997"/> NO_ADVERTISE
+            community to prevent further redistribution.
+          </t>
+        </section>
+      </section>
+
+      <section>
+        <name>Completeness of SAV information and enabling enforcement</name>
+
+        <t>
+          Even presuming pervasive and instantaneous deployment of SAV in a
+          network, many documents discuss the problems associated with
+          incomplete SAV information.  Such issues can include incorrectly
+          passing traffic that should have been blocked or blocking traffic that
+          should have been passed.
+        </t>
+
+        <t>
+          Forwarding resources utilized by an implementation to enforce SAV may
+          take time to program.  Such programming MUST be in-place with full
+          state and correct prior to enforcement.  Failure to do so may result
+          in incorrect enforcement.  Implementations SHOULD NOT enable
+          enforcement of SAV until the state is fully programmed.
+        </t>
+
+        <t>
+          One possible mechanism for controlling the activation of enforcement
+          is careful control of a SAV-D "default" route for the node.  In
+          circumstances where SAV Rules are primarily of the form of an
+          allow-list, enforcement of block activity can be modeled as a
+          "default" block action.  As long as the default is signaled last and
+          its processing is deferred until other installation of SAV Table state
+          is complete, inappropriate dropping of traffic may be minimized.
+        </t>
+
+        <t>
+          Note that BGP does not permit careful sequencing of NLRI distribution
+          within the protocol.  Routes advertised "last" are only done so
+          between a pair of BGP speakers on a session.  Implementations might
+          otherwise re-order advertised NLRI while propagating BGP routes
+          according to their own desires.
+        </t>
+      </section>
+    </section>
+
+    <section anchor="IANA">
+      <name>IANA Considerations</name>
+      <t>TBD</t>
+    </section>
+    
+    <section anchor="Security">
+      <name>Security Considerations</name>
+      <t>
+        A huge list to come.  In particular, incorrect or incomplete
+        installation of SAV in a network while having attracted traffic to that
+        network by normal BGP means is harmful to the Internet.
+      </t>
+    </section>
+  </middle>
+
+  <back>
+    <references>
+      <name>References</name>
+      <references>
+        <name>Normative References</name>
+        
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.1213.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.1997.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.2119.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4360.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4684.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8174.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8210.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8955.xml"/>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8956.xml"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.huang-savnet-sav-table.xml"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-flowspec-redirect-ip"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-node-target-ext-comm"/>
+
+        
+      </references>
+ 
+      <references>
+        <name>Informative References</name>
+        <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8704.xml"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-sidrops-bar-sav"/>
+      </references>
+    </references>
+    
+    <section anchor="Acknowledgements" numbered="false">
+      <!-- an Acknowledgements section is optional -->
+      <name>Acknowledgements</name>
+      <t>TBD</t>
+    </section>
+    
+    <section anchor="Contributors" numbered="false">
+      <!-- a Contributors section is optional -->
+      <name>Contributors</name>
+      <t>TBD.</t>
+    </section>
+    
+ </back>
+</rfc>
