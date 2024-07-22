@@ -629,14 +629,94 @@ Sub-Type: TBD
       <references>
         <name>Informative References</name>
         <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8704.xml"/>
-        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-sidrops-bar-sav"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-sidrops-bar-sav.xml"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-flowspec-v2.xml"/>
+        <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-flowspec-interfaceset.xml"/>
       </references>
     </references>
     
+    <section>
+      <name>Encoding choices, why not Flowspec version 2?</name>
+
+      <t>
+        SAV enforcement of SAV rules in many ways resembles an access control
+        list (ACL), which are often implemented via firewalls.  BGP Flowspec 
+        <xref target="RFC8955"/> is capable of distributing IP source address
+        filtering to be instantiated in firewalls.  However, Flowspec's original
+        design for mitigating distributed denial of service (DDoS) attacks
+        generally has meant that rules distributed via Flowspec are intended to
+        be applied to the interfaces of all Flowspec routers in a network.
+      </t>
+      <t>
+        The <xref target="I-D.ietf-idr-flowspec-interfaceset"/> feature
+        provides scoped application of Flowspec filters.  This feature inspires
+        some of the applicability of the SAV-D Device-Specific Group Member
+        Extended Community.
+      </t>
+      <t>
+        Given the overlapping nature of SAV enforcement behavior, and firewalls
+        that may be programmed via Flowspec, should SAV enforcement be encoded
+        there?
+      </t>
+      <ul>
+        <li>SAV enforcement is not required to be implemented in a forwarding
+          element's firewall infrastructure.  Encoding SAV state in firewall
+          functionality implies that this might be the case.  (Namespace
+          confusion.)
+        </li>
+        <li>Flowspec provides for ordered filter installation.  If a SAV rule is
+          present in flowspec, and implemented in something other than the
+          firewall infrastructure, and filtering is not executed in the expected
+          order, that's a problem.  Minimally, it is a matter of violating the
+          "Principle of Least Astonishment".  Moreover, firewall applications
+          built on the expectation that rules are executed in a particular order
+          may be fail to execute as expected due to the firewall term
+          dependencies.
+        </li>
+        <li><xref target="I-D.ietf-idr-flowspec-v2"/> proposes a
+          user-managed term order mechanism in additition to the default term
+          order that Flowspec generates based on filtering components.  This could
+          be leveraged to order SAV rules in a more appropriately logical place in
+          the filter relative to an implementations forwarding pipeline; e.g.
+          "last".  However, this still presumes to know how a given platform that
+          does not instantiate SAV filtering will perform enforcement.
+        </li>
+        <li>The placement of SAV-D in a different AFI/SAFI than Flowspec also
+          permits for the distribution of SAV rules distinctly from a BGP
+          routing topology that may carry Flowspec.  Similarly, a separate
+          AFI/SAFI means that implementations do not conflate distribution of
+          firewall state vs.  SAV state in terms of ordering and prioritization.
+          SAV state will, in the majority of cases, significantly exceed the
+          number of entries typically carried in Flowspec for firewall by
+          several orders of magnitude.
+        </li>
+        <li>Flowspec does have a form of encoding that carries a Route
+          Distinguisher for VPN Flowspec purposes in a VPN-specific AFI/SAFI.
+          However, that format currently carries the expectation that it is
+          accompanied by a BGP Route Target for installing the routes in a VRF
+          context.
+        </li>
+        <li>Finally, a significant amount of the fragility that Flowspec is
+          subject to is a result of the complexity needed to encode the various
+          components in a term in the NLRI.  SAV-D state has the much simpler
+          need to encode only a RD, and a IPv4/IPv6 prefix.  This also has the
+          benefit of being not only "fit for purpose", but can pack better in
+          BGP Updates since Flowspec v1/v2 NLRI have more overhead.
+        </li>
+      </ul>
+      <t>
+        It is a valid observation that the Group Member Extended Communities
+        defined for SAV-D may have overlapping usefulness for general-purpose
+        BGP Flowspec applications.  Future versions of this document may
+        repurpose the Extended Communities for such general use.
+      </t>
+    </section>
+
     <section anchor="Acknowledgements" numbered="false">
       <!-- an Acknowledgements section is optional -->
       <name>Acknowledgements</name>
-      <t>TBD</t>
+      <t>Discussions with Nan Geng and Susan Hares at IETF-119 were helpful in
+        formulating the requirements for this draft.</t>
     </section>
     
     <section anchor="Contributors" numbered="false">
@@ -644,6 +724,5 @@ Sub-Type: TBD
       <name>Contributors</name>
       <t>TBD.</t>
     </section>
-    
  </back>
 </rfc>
