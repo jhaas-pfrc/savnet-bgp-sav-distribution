@@ -9,7 +9,7 @@
 <rfc
   xmlns:xi="http://www.w3.org/2001/XInclude"
   category="std"
-  docName="draft-haas-savnet-bgp-sav-distribution-00"
+  docName="draft-haas-savnet-bgp-sav-distribution-01"
   ipr="trust200902"
   obsoletes=""
   updates=""
@@ -19,7 +19,7 @@
   <front>
     <title abbrev="BGP SAV Distribution">Distribution of Source Address Validation State in BGP</title>
 
-    <seriesInfo name="Internet-Draft" value="draft-haas-savnet-bgp-sav-distribution-00"/>
+    <seriesInfo name="Internet-Draft" value="draft-haas-savnet-bgp-sav-distribution-01"/>
    
     <author fullname="Jeffrey Haas" initials="J." surname="Haas">
       <organization>Juniper Networks, Inc.</organization>
@@ -35,7 +35,7 @@
       </address>
     </author>
    
-    <date year="2024"/>
+    <date year="2025"/>
 
     <area>Routing</area>
     <workgroup>Internet Engineering Task Force</workgroup>
